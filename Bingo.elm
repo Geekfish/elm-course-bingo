@@ -16,11 +16,9 @@ import Html.Attributes
 import Html.Events exposing (onClick, onInput, onFocus)
 import Random
 import Http
-import Json.Decode as Decode exposing (Decoder, field, succeed)
-import Json.Decode.Pipeline exposing (decode, required, optional, hardcoded)
-import Json.Encode as Encode
 import ViewHelpers exposing (primaryButton, alert)
 import Entry
+import Score
 
 
 -- Config
@@ -29,6 +27,16 @@ import Entry
 apiUrlPrefix : String
 apiUrlPrefix =
     "http://localhost:3000"
+
+
+entriesUrl : String
+entriesUrl =
+    apiUrlPrefix ++ "/random-entries"
+
+
+scoreUrl : String
+scoreUrl =
+    apiUrlPrefix ++ "/scores"
 
 
 
@@ -48,13 +56,6 @@ type alias Model =
     , validationError : Maybe String
     , nameInput : String
     , gameState : GameState
-    }
-
-
-type alias Score =
-    { id : Int
-    , name : String
-    , score : Int
     }
 
 
@@ -81,7 +82,7 @@ type Msg
     | NewEntries (Result Http.Error (List Entry.Entry))
     | CloseAlert
     | ShareScore
-    | NewScore (Result Http.Error Score)
+    | NewScore (Result Http.Error Score.Score)
     | SetNameInput String
     | SaveName
     | CancelName
@@ -132,7 +133,7 @@ update msg model =
                 ! []
 
         ShareScore ->
-            ( model, postScore model )
+            ( model, Score.postScore NewScore scoreUrl model )
 
         NewScore (Ok score) ->
             let
@@ -181,30 +182,6 @@ httpErrorToMessage error =
 
 
 
--- DECODERS
-
-
-scoreDecoder : Decoder Score
-scoreDecoder =
-    decode Score
-        |> required "id" Decode.int
-        |> required "name" Decode.string
-        |> required "score" Decode.int
-
-
-
--- ENCODERS
-
-
-scoreEncoder : Model -> Encode.Value
-scoreEncoder model =
-    Encode.object
-        [ ( "name", Encode.string model.name )
-        , ( "score", Encode.int (Entry.sumMarkedPoints model.entries) )
-        ]
-
-
-
 -- COMMANDS
 
 
@@ -213,33 +190,9 @@ generateRandomNumber =
     Random.generate (\num -> NewRandom num) (Random.int 1 100)
 
 
-entriesUrl : String
-entriesUrl =
-    apiUrlPrefix ++ "/random-entries"
-
-
 getEntries : Cmd Msg
 getEntries =
     Entry.getEntries NewEntries entriesUrl
-
-
-scoreUrl : String
-scoreUrl =
-    apiUrlPrefix ++ "/scores"
-
-
-postScore : Model -> Cmd Msg
-postScore model =
-    let
-        body =
-            model
-                |> scoreEncoder
-                |> Http.jsonBody
-
-        request =
-            Http.post scoreUrl body scoreDecoder
-    in
-        Http.send NewScore request
 
 
 
@@ -277,15 +230,6 @@ shareButtonDisabled model =
     (Entry.sumMarkedPoints model.entries) == 0
 
 
-viewScore : Int -> Html Msg
-viewScore sum =
-    div
-        [ class "score" ]
-        [ span [ class "label" ] [ text "Score" ]
-        , span [ class "value" ] [ text (toString sum) ]
-        ]
-
-
 view : Model -> Html Msg
 view model =
     div [ class "content" ]
@@ -294,7 +238,7 @@ view model =
         , alert CloseAlert model.alertMessage
         , viewNameInput model
         , Entry.viewEntryList Mark model.entries
-        , viewScore (Entry.sumMarkedPoints model.entries)
+        , Score.viewScore (Entry.sumMarkedPoints model.entries)
         , div [ class "button-group" ]
             [ primaryButton NewGame "New Game" []
             , primaryButton ShareScore "Share Score" [ disabled (shareButtonDisabled model) ]
